@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+const base='http://localhost:5173',cookies=new Map();
+async function ownerFetch(path,options={}){let url=new URL(path,base);for(let i=0;i<8;i++){const headers=new Headers(options.headers);headers.set('Cookie',[...cookies].map(([k,v])=>k+'='+v).join('; '));if(options.method==='POST')headers.set('Origin',base);const r=await fetch(url,{...options,headers,redirect:'manual'});for(const cookie of r.headers.getSetCookie()){const pair=cookie.split(';')[0],n=pair.indexOf('=');cookies.set(pair.slice(0,n),pair.slice(n+1));}if(r.status>=300&&r.status<400){url=new URL(r.headers.get('location'),url);continue;}return r;}throw Error('Too many redirects');}
+assert.equal((await ownerFetch('/bank')).status,200);
+assert.equal((await(await ownerFetch('/api/me')).json()).anonymous,true);
+const guestResponse=await ownerFetch('/api/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'先逛逛的朋友',question:'請給我一句鼓勵'})});assert.equal(guestResponse.status,201);const guest=await guestResponse.json();
+const guestForm=new FormData();guestForm.append('author','朋友');guestForm.append('message','登入前就收到的心意');guestForm.append('submissionId',crypto.randomUUID());
+assert.equal((await fetch(base+'/api/invites/'+guest.id+'/deposits',{method:'POST',headers:{Origin:base},body:guestForm})).status,201);
+assert.equal((await ownerFetch('/api/deposits')).status,401);assert.equal((await(await ownerFetch('/api/me')).json()).pendingCount,1);
+await ownerFetch('/signin-with-chatgpt?return_to=%2Fbank');
+assert.equal((await ownerFetch('/api/claim',{method:'POST'})).status,200);
+assert.ok((await(await ownerFetch('/api/deposits')).json()).deposits.some(d=>d.text==='登入前就收到的心意'));
+const me=await ownerFetch('/api/me');assert.equal(me.status,200);
+const created=await ownerFetch('/api/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'測試收件者',question:'請給我一句鼓勵'})});assert.equal(created.status,201);const invite=await created.json();
+assert.equal((await fetch(base+'/api/invites/'+invite.id)).status,200);
+const form=new FormData();form.append('author','測試朋友');form.append('message','本機實際伺服器與雲端綁定收送測試');form.append('submissionId',crypto.randomUUID());form.append('video',new Blob([new Uint8Array([0,0,0,16,102,116,121,112,105,115,111,109,0,0,0,0])],{type:'video/mp4'}),'test.mp4');
+const sent=await fetch(base+'/api/invites/'+invite.id+'/deposits',{method:'POST',headers:{Origin:base},body:form});const text=await sent.text();assert.equal(sent.status,201,text);const deposited=JSON.parse(text);
+const list=await(await ownerFetch('/api/deposits')).json();assert.ok(list.deposits.some(d=>d.id===deposited.id));
+const video=await ownerFetch('/api/deposits/'+deposited.id+'/video');assert.equal(video.status,200);assert.equal((await video.arrayBuffer()).byteLength,16);
+const range=await ownerFetch('/api/deposits/'+deposited.id+'/video',{headers:{Range:'bytes=0-3'}});assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,4);
+assert.equal((await fetch(base+'/api/deposits/'+deposited.id+'/video')).status,401);
+assert.equal((await ownerFetch('/api/deposits/'+deposited.id+'/open',{method:'POST'})).status,200);
+console.log('Local worker passed: sign-in, invite, anonymous multipart text/video deposit, private inbox, R2 playback/range, and opening.');

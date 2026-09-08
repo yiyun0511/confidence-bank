@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tar.gz
+.env*
+.wrangler/
+.vite/
+public/app.js
+public/styles.css
+*.tsbuildinfo
+.pnpm-store/
+.next/
+.vinext/
